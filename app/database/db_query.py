@@ -2,7 +2,7 @@ import sqlite3
 
 class DBQuery: 
   @staticmethod
-  def create_table():
+  def create_drugs_table():
     connection = DBQuery.__get_connection()
     cursor = connection.cursor()
     cursor.execute('''
@@ -12,6 +12,7 @@ class DBQuery:
         details_url TEXT,
         uses TEXT,
         side_effects TEXT,
+        warnings TEXT,
         precautions TEXT,
         interactions TEXT,
         overdose TEXT
@@ -20,17 +21,22 @@ class DBQuery:
     connection.commit()
     connection.close()
   
-  def clean_table(table_name):
+  def clean_table(table):
     connection = DBQuery.__get_connection()
     cursor = connection.cursor()
+    
+    if not DBQuery.check_if_table_exists(table):
+      connection.close()
+      return False
+    
     cursor.execute(f'''
-      DELETE FROM  {table_name}
+      DELETE FROM {table}
     ''')
     connection.commit()
     connection.close()
   
   @staticmethod
-  def insert(item, table_name):
+  def insert(item, table):
     connection = DBQuery.__get_connection()
     cursor = connection.cursor()
     
@@ -41,8 +47,12 @@ class DBQuery:
     binder = ', '.join(binder)
     columns_names = ', '.join(item.keys())
     
+    if not DBQuery.check_if_table_exists(table):
+      connection.close()
+      return False
+    
     cursor.execute(f'''
-      INSERT INTO {table_name} ({columns_names}) VALUES ({binder})
+      INSERT INTO {table} ({columns_names}) VALUES ({binder})
     ''', list(item.values()))
     connection.commit()
     connection.close()
@@ -59,5 +69,56 @@ class DBQuery:
     return tables
   
   @staticmethod
+  def get_all(table):
+    connection = DBQuery.__get_connection()
+    cursor = connection.cursor()
+    
+    if not DBQuery.check_if_table_exists(table):
+      return []
+    
+    cursor.execute(f'''
+      SELECT * FROM {table}
+    ''')
+    
+    columns = [col[0] for col in cursor.description]
+    results = cursor.fetchall()
+    connection.close()
+
+    result_dicts = [dict(zip(columns, row)) for row in results]
+
+    return result_dicts
+  
+  @staticmethod
+  def get_by_column(column, input):
+    connection = DBQuery.__get_connection()
+    cursor = connection.cursor()
+    
+    cursor.execute(f'''
+      SELECT * FROM drugs WHERE {column} = ?
+    ''', (input,))
+    
+    columns = [col[0] for col in cursor.description]
+    results = cursor.fetchall()
+    
+    connection.close()
+    
+    result_dicts = [dict(zip(columns, row)) for row in results]
+    return result_dicts
+  
+  @staticmethod
+  def check_if_table_exists(table:str):
+    connection = DBQuery.__get_connection()
+    cursor = connection.cursor()
+    
+    cursor.execute(f'''
+      SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'
+    ''')
+    
+    if not cursor.fetchone():
+      return False
+    
+    return True
+  
+  @staticmethod
   def __get_connection():
-    return sqlite3.connect('database/db.sqlite3')
+    return sqlite3.connect('app/database/db.sqlite3')

@@ -6,8 +6,8 @@ from app.database.db_query import DBQuery
 class Scraper:
   @staticmethod
   def scrap_all_drugs():
-    DBQuery.clean_table('drugs')
-    
+    nb_parsed = 0 
+    DBQuery.create_drugs_table()
     alphabet = "abcdefghijklmnopqrstuvwxyz"
     base_url = f"{Scraper.__get_base_url()}/drugs/2/alpha"
     for letter in alphabet:
@@ -24,13 +24,21 @@ class Scraper:
           drug = {}
           for drug_name in drug_html.find_all("a"):
             drug['name'] = drug_name.text
+            
+            if len(DBQuery.get_by_column('name', drug['name'])) > 0:
+              print(colored(f"[SKIPPED] {drug['name']}", "yellow"))
+              continue
+            
             drug['details_url'] = drug_name['href']
             drug = Scraper.scrap_drug(drug)
             
             DBQuery.insert(drug, 'drugs')
-            print(colored("Inserted: ", drug['name'], "green"))
+            print(colored(f"[INSERTED] {drug['name']}", "green"))
+            nb_parsed += 1
 
         url = url
+    print(colored(f"----------\nScraped {nb_parsed} drugs\n----------", "green"))    
+    
     
   @staticmethod
   def scrap_drug(drug):
@@ -38,35 +46,29 @@ class Scraper:
     response = requests.get(Scraper.__get_base_url() + drug['details_url'], headers=headers)
     soup = bs4.BeautifulSoup(response.content, 'html.parser')
     
-    drug['uses'] = Scraper.__get_uses(soup)
-    # drug['side_effects'] = Scraper.__get_side_effects(soup)
-    # drug['precautions'] = Scraper.__get_precautions(soup)
-    # drug['interactions'] = Scraper.__get_interactions(soup)
-    # drug['overdose'] = Scraper.__get_overdose(soup)
+    sections = ["uses", "side-effects", "warnings", "precautions", "interactions", "overdose"]
+    for section in sections:
+      drug[section.replace('-', "_")] = Scraper.__get_content(soup, section)
     
     return drug
   
   @staticmethod
-  def __get_uses(soup):
+  def __get_content(soup, section):
+    content = soup.find("div", class_=f"{section}-container")
+    content_text = ""
     
-    intro = soup.find("div", class_="monograph-content")
-    how_to_use_paragraphes = soup.find("div", class_="how-to-use-section")
-    
-    if intro is None:
+    if content is None:
       return None
+ 
+    tags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span']
+    content = content.find_all(tags)
     
-    how_to_use = ""
-    for paragraph in intro.find_all("p"):
-      how_to_use += f"\n{paragraph.text}"
-    
-    if how_to_use_paragraphes is not None:
-      how_to_use_paragraphes.find_all("p")
+    for paragraph in content:
+      content_text += f"{paragraph.text}\n"
       
-      for paragraph in how_to_use_paragraphes:
-        how_to_use += f"\n{paragraph.text}"
-      
-    return how_to_use
-    
+    return content_text
+  
+    content
   @staticmethod
   def __get_headers():
     return {
@@ -76,5 +78,3 @@ class Scraper:
   @staticmethod
   def __get_base_url():
     return "https://www.webmd.com"
-
-Scraper.scrap_all_drugs()
